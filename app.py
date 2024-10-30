@@ -59,8 +59,7 @@ class CoolingCenterApp:
 
     def get_user_location(self):
         """Handle user location input"""
-        vertical_alignment = st.selectbox( "Vertical alignment", ["top", "center", "bottom"], index=2)
-        col1, col2, col3 = st.columns([3, 1, 1], vertical_alignment=vertical_alignment)
+        col1, col2, col3 = st.columns([3, 1, 1])
         
         
         with col1:
