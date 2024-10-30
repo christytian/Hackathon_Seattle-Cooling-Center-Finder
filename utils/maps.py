@@ -116,57 +116,41 @@ class MapService:
 
     def _create_center_popup(self, center: Dict) -> str:
         """Create HTML content for cooling center popup"""
-        try:
-            # Format hours
-            hours_text = center.get('hours', 'Hours not available')
-            if ';' in hours_text:
-                hours_lines = hours_text.split(';')
-                hours_html = '<br>'.join(hours_lines)
-            else:
-                hours_html = hours_text
-
-            # Format features
-            features = center.get('features', [])
-            if isinstance(features, str):
-                features = [f.strip() for f in features.split(',')]
-            features_html = '<br>'.join([f"• {f.strip()}" for f in features])
-
-            # Get status
-            is_open = center.get('is_open', False)
-            status_emoji = "🟢" if is_open else "🔴"
-            status_text = "Open" if is_open else "Closed"
-
-            # Create basic HTML popup content
-            popup_content = f'''
-                <div style="font-family: Arial, sans-serif;">
-                    <h4>{center["name"]}</h4>
-                    <p><b>Status:</b> {status_emoji} {status_text}</p>
-                    <p><b>Address:</b><br>{center["address"]}</p>
-                    <p><b>Type:</b> {center["type"]}</p>
-                    <p><b>Hours:</b><br>{hours_html}</p>
-                    <p><b>Features:</b><br>{features_html}</p>
-                '''
-
-            # Add distance if available
-            if 'distance' in center:
-                popup_content += f'<p><b>Distance:</b> {center["distance"]:.1f} miles</p>'
-
-            # Add notes if available
-            if pd.notna(center.get('notes')):
-                popup_content += f'<p><b>Notes:</b><br>{center["notes"]}</p>'
-
-            popup_content += '</div>'
-            
-            return popup_content
-
-        except Exception as e:
-            print(f"Error creating popup for {center.get('name', 'unknown')}: {e}")
-            return f'''
-                <div>
-                    <h4>{center.get('name', 'Unknown Center')}</h4>
-                    <p>Error loading details</p>
-                </div>
-            '''
+        # Parse hours into a more readable format
+        hours_dict = {}
+        if isinstance(center['hours'], str):
+            hours_list = center['hours'].strip('"\'').split(';')
+            for hour in hours_list:
+                if ':' in hour:
+                    day, time = hour.split(':', 1)
+                    hours_dict[day.strip()] = time.strip()
+        
+        # Create hours HTML
+        hours_html = "<br>".join([
+            f"<b>{day}:</b> {time}"
+            for day, time in hours_dict.items()
+        ]) if hours_dict else center.get('hours', 'Hours not available')
+        
+        # Create features HTML
+        features = center.get('features', [])
+        if isinstance(features, str):
+            features = eval(features)
+        features_html = "<br>".join([
+            f"• {feature.strip()}" for feature in features
+        ]) if features else "No features listed"
+        
+        return f"""
+            <div style="min-width: 300px; max-width: 400px;">
+                <h4 style="margin-bottom: 10px;">{center['name']}</h4>
+                <p><b>Address:</b><br>{center['address']}</p>
+                <p><b>Type:</b> {center['type']}</p>
+                <p><b>Hours:</b><br>{hours_html}</p>
+                <p><b>Features:</b><br>{features_html}</p>
+                <p><b>Distance:</b> {center.get('distance', 'N/A')} miles</p>
+                <p><b>Status:</b> {'🟢 Open' if center.get('is_open', False) else '🔴 Closed'}</p>
+                {f"<p><b>Notes:</b><br>{center['notes']}</p>" if pd.notna(center.get('notes')) else ''}
+            </div>
+        """
 
     def get_route(self, 
                  origin: Tuple[float, float], 

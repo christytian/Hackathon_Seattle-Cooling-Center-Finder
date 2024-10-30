@@ -17,14 +17,10 @@ class CoolingCenterData:
         )
         
         # Convert features from string to list
-        #self.df['features'] = self.df['features'].apply(
-            #lambda x: [] if pd.isna(x) else [
-                #f.strip().strip("'") for f in x.strip('[]"\'').split(',')
-            #]
-        #)
-        # Convert features from string to list
         self.df['features'] = self.df['features'].apply(
-            lambda x: x.split(',') if isinstance(x, str) else []
+            lambda x: [] if pd.isna(x) else [
+                f.strip().strip("'") for f in x.strip('[]"\'').split(',')
+            ]
         )
 
     def _parse_coordinates(self, coord_str: str) -> tuple:
@@ -36,7 +32,7 @@ class CoolingCenterData:
             print(f"Error parsing coordinates {coord_str}: {e}")
             return (0, 0)
 
-    #def _parse_hours(self, hours_str: str) -> dict:
+    def _parse_hours(self, hours_str: str) -> dict:
         """Parse hours string into structured format"""
         if pd.isna(hours_str):
             return {}
@@ -53,55 +49,58 @@ class CoolingCenterData:
         return hours_dict
 
     def _is_center_open(self, hours_str: str) -> bool:
-        """Check if a center is currently open"""
-        if pd.isna(hours_str):
+        """
+        Check if a center is currently open based on hours string
+        Example hours_str format: "MON:9:00AM-5:00PM;TUE:9:00AM-5:00PM"
+        """
+        if pd.isna(hours_str) or hours_str == '':
             return False
 
         try:
+            # Get current day and time
             now = datetime.now()
-            current_day = now.strftime('%a').upper()
+            current_day = now.strftime('%a').upper()  # Get current day abbreviation (MON, TUE, etc.)
 
-            # Split the hours string by semicolon to get each day's hours
-            days_hours = [h.strip() for h in hours_str.split(';')]
-            
-            # Find current day's hours
-            current_day_hours = None
-            for day_hour in days_hours:
-                if day_hour.startswith(current_day):
-                    current_day_hours = day_hour
-                    break
-            
-            if not current_day_hours:
+            # Parse hours string into dictionary
+            hours_dict = {}
+            days = hours_str.strip('"\'').split(';')
+            for day_hours in days:
+                if ':' in day_hours:
+                    day, hours = day_hours.split(':', 1)
+                    hours_dict[day.strip()] = hours.strip()
+
+            # Check if we have hours for current day
+            if current_day not in hours_dict:
                 return False
 
-            # Get the hours part after the colon
-            _, hours = current_day_hours.split(':', 1)
-            
-            if hours.strip() == 'CLOSED':
+            # Get today's hours
+            today_hours = hours_dict[current_day]
+            if today_hours == 'CLOSED':
                 return False
 
-            # Parse opening and closing times
-            open_str, close_str = hours.strip().split('-')
-            
-            # Convert to datetime objects for comparison
-            current_time = now.strftime("%I:%M%p")
-            current_time = datetime.strptime(current_time, "%I:%M%p")
-            
-            open_time = datetime.strptime(open_str.strip(), "%I:%M%p")
-            close_time = datetime.strptime(close_str.strip(), "%I:%M%p")
-            
+            # Split into open and close times
+            open_time_str, close_time_str = today_hours.split('-')
+
+            # Convert current time to minutes since midnight
+            current_minutes = now.hour * 60 + now.minute
+
+            # Convert opening time to minutes since midnight
+            open_time = datetime.strptime(open_time_str.strip(), '%I:%M%p')
+            open_minutes = open_time.hour * 60 + open_time.minute
+
+            # Convert closing time to minutes since midnight
+            close_time = datetime.strptime(close_time_str.strip(), '%I:%M%p')
+            close_minutes = close_time.hour * 60 + close_time.minute
+
             # Check if current time is within opening hours
-            return open_time <= current_time <= close_time
+            return open_minutes <= current_minutes <= close_minutes
 
         except Exception as e:
-            print(f"Error checking hours {hours_str}: {e}")
+            print(f"Error checking hours for {hours_str}: {e}")
             return False
-
     def get_all_centers(self) -> pd.DataFrame:
-        """Get only currently open centers"""
-        centers = self.df.copy()
-        centers['is_open'] = centers['hours'].apply(self._is_center_open)
-        return centers[centers['is_open']]
+        """Get all cooling centers"""
+        return self.df
 
     def get_nearest_centers(self, 
                           lat: float, 
@@ -109,9 +108,7 @@ class CoolingCenterData:
                           max_distance: float = 5.0,
                           limit: int = None,
                           show_only_open: bool = False) -> pd.DataFrame:
-        """
-        Get nearest cooling centers within specified distance
-        
+        """Get nearest cooling centers within specified distance
         Args:
             lat (float): User latitude
             lng (float): User longitude
@@ -131,7 +128,7 @@ class CoolingCenterData:
         
         # Filter by distance
         centers = centers[centers['distance'] <= max_distance]
-        
+
         # Add open/closed status
         centers['is_open'] = centers['hours'].apply(self._is_center_open)
         
@@ -141,6 +138,9 @@ class CoolingCenterData:
         
         # Sort by distance
         centers = centers.sort_values('distance')
+        
+        # Add open/closed status
+        centers['is_open'] = centers['hours'].apply(self._is_center_open)
         
         # Limit results if specified
         if limit:
@@ -162,4 +162,6 @@ class CoolingCenterData:
 
     def get_open_centers(self) -> pd.DataFrame:
         """Get only currently open centers"""
-        return self.df[self.df['hours'].apply(self._is_center_open)]
+        centers = self.df.copy()
+        centers['is_open'] = centers['hours'].apply(self._is_center_open)
+        return centers[centers['is_open']]
