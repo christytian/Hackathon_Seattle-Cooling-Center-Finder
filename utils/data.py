@@ -1,95 +1,114 @@
-from typing import List, Dict, Optional
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
+from typing import List, Dict, Optional
 from geopy.distance import geodesic
 
 class CoolingCenterData:
-    # Define cooling centers data
-    COOLING_CENTERS = [
-        {
-            'name': 'Rainier Beach Community Center',
-            'address': '8825 Rainier Ave S, Seattle, WA 98118',
-            'type': 'Community Center',
-            'coordinates': (47.5223, -122.2666),
-            'hours': '9:00AM-9:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Water Fountain', 'Restrooms'],
-            'notes': 'Regular business hours'
-        },
-        {
-            'name': 'International District/Chinatown Community Center',
-            'address': '719 8th Ave S, Seattle, WA 98104',
-            'type': 'Community Center',
-            'coordinates': (47.5964, -122.3203),
-            'hours': '9:00AM-9:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Water Fountain', 'Restrooms'],
-            'notes': 'Regular business hours'
-        },
-        {
-            'name': 'Northgate Community Center',
-            'address': '10510 5th Ave NE, Seattle, WA 98125',
-            'type': 'Community Center',
-            'coordinates': (47.7052, -122.3438),
-            'hours': '9:00AM-9:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Water Fountain', 'Restrooms'],
-            'notes': 'Regular business hours'
-        },
-        {
-            'name': 'Magnuson Community Center',
-            'address': '7110 62nd Avenue NE, Seattle, WA 98115',
-            'type': 'Community Center',
-            'coordinates': (47.6814, -122.2752),
-            'hours': '9:00AM-9:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Water Fountain', 'Restrooms'],
-            'notes': 'Regular business hours'
-        },
-        {
-            'name': 'Seattle Center Armory',
-            'address': 'Food & Event Hall, Seattle Center',
-            'type': 'Event Hall',
-            'coordinates': (47.6219, -122.3517),
-            'hours': '7:00AM-9:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Food Court', 'Restrooms'],
-            'notes': 'Summer operation hours'
-        },
-        {
-            'name': 'Central Library',
-            'address': '1000 4th Ave, Seattle, WA 98104',
-            'type': 'Library',
-            'coordinates': (47.6067, -122.3325),
-            'hours': '10:00AM-8:00PM',
-            'has_ac': True,
-            'features': ['Air Conditioning', 'Water Fountain', 'Restrooms', 'Seating'],
-            'notes': 'Hours may vary. Check www.spl.org/Today for updates'
-        }
-    ]
-
-    def __init__(self):
-        """Initialize the CoolingCenterData class"""
-        self.df = pd.DataFrame(self.COOLING_CENTERS)
-        # Split coordinates into lat and lng
+    def __init__(self, csv_path: str = 'cooling_center_data.csv'):
+        """Initialize the CoolingCenterData class with CSV data"""
+        # Read CSV file
+        self.df = pd.read_csv(csv_path)
+        
+        # Clean and process coordinates
+        self.df['coordinates'] = self.df['coordinates'].apply(self._parse_coordinates)
         self.df[['lat', 'lng']] = pd.DataFrame(
             self.df['coordinates'].tolist(), 
             index=self.df.index
         )
+        
+        # Convert features from string to list
+        #self.df['features'] = self.df['features'].apply(
+            #lambda x: [] if pd.isna(x) else [
+                #f.strip().strip("'") for f in x.strip('[]"\'').split(',')
+            #]
+        #)
+        # Convert features from string to list
+        self.df['features'] = self.df['features'].apply(
+            lambda x: x.split(',') if isinstance(x, str) else []
+        )
+
+    def _parse_coordinates(self, coord_str: str) -> tuple:
+        """Parse coordinates string into tuple of floats"""
+        try:
+            lat, lng = map(float, coord_str.split(','))
+            return (lat, lng)
+        except Exception as e:
+            print(f"Error parsing coordinates {coord_str}: {e}")
+            return (0, 0)
+
+    #def _parse_hours(self, hours_str: str) -> dict:
+        """Parse hours string into structured format"""
+        if pd.isna(hours_str):
+            return {}
+            
+        hours_dict = {}
+        # Remove extra quotes and split by semicolon
+        hours_list = hours_str.strip('"\'').split(';')
+        
+        for hour in hours_list:
+            if ':' in hour:
+                day, time = hour.split(':', 1)
+                hours_dict[day.strip()] = time.strip()
+        
+        return hours_dict
+
+    def _is_center_open(self, hours_str: str) -> bool:
+        """Check if a center is currently open"""
+        if pd.isna(hours_str):
+            return False
+
+        try:
+            now = datetime.now()
+            current_day = now.strftime('%a').upper()
+
+            # Split the hours string by semicolon to get each day's hours
+            days_hours = [h.strip() for h in hours_str.split(';')]
+            
+            # Find current day's hours
+            current_day_hours = None
+            for day_hour in days_hours:
+                if day_hour.startswith(current_day):
+                    current_day_hours = day_hour
+                    break
+            
+            if not current_day_hours:
+                return False
+
+            # Get the hours part after the colon
+            _, hours = current_day_hours.split(':', 1)
+            
+            if hours.strip() == 'CLOSED':
+                return False
+
+            # Parse opening and closing times
+            open_str, close_str = hours.strip().split('-')
+            
+            # Convert to datetime objects for comparison
+            current_time = now.strftime("%I:%M%p")
+            current_time = datetime.strptime(current_time, "%I:%M%p")
+            
+            open_time = datetime.strptime(open_str.strip(), "%I:%M%p")
+            close_time = datetime.strptime(close_str.strip(), "%I:%M%p")
+            
+            # Check if current time is within opening hours
+            return open_time <= current_time <= close_time
+
+        except Exception as e:
+            print(f"Error checking hours {hours_str}: {e}")
+            return False
 
     def get_all_centers(self) -> pd.DataFrame:
-        """Get all cooling centers"""
-        return self.df
-
-    def get_open_centers(self) -> pd.DataFrame:
         """Get only currently open centers"""
-        return self.df[self.df.apply(lambda x: self._is_center_open(x['hours']), axis=1)]
+        centers = self.df.copy()
+        centers['is_open'] = centers['hours'].apply(self._is_center_open)
+        return centers[centers['is_open']]
 
     def get_nearest_centers(self, 
                           lat: float, 
                           lng: float, 
                           max_distance: float = 5.0,
-                          limit: int = None) -> pd.DataFrame:
+                          limit: int = None,
+                          show_only_open: bool = False) -> pd.DataFrame:
         """
         Get nearest cooling centers within specified distance
         
@@ -98,15 +117,14 @@ class CoolingCenterData:
             lng (float): User longitude
             max_distance (float): Maximum distance in miles
             limit (int): Maximum number of results to return
-            
-        Returns:
-            DataFrame: Filtered and sorted cooling centers
+            show_only_open (bool): Whether to show only currently open centers
         """
-        # Calculate distances
         centers = self.df.copy()
+        
+        # Calculate distances
         centers['distance'] = centers.apply(
             lambda row: self._calculate_distance(
-                lat, lng, row['coordinates'][0], row['coordinates'][1]
+                lat, lng, row['lat'], row['lng']
             ),
             axis=1
         )
@@ -114,28 +132,21 @@ class CoolingCenterData:
         # Filter by distance
         centers = centers[centers['distance'] <= max_distance]
         
-        # Sort by distance
-        centers = centers.sort_values('distance')
-        
         # Add open/closed status
         centers['is_open'] = centers['hours'].apply(self._is_center_open)
+        
+        # Filter for only open centers if requested
+        if show_only_open:
+            centers = centers[centers['is_open']]
+        
+        # Sort by distance
+        centers = centers.sort_values('distance')
         
         # Limit results if specified
         if limit:
             centers = centers.head(limit)
             
         return centers
-
-    def get_centers_by_type(self, center_type: str) -> pd.DataFrame:
-        """Get centers of a specific type"""
-        return self.df[self.df['type'] == center_type]
-
-    def get_center_by_name(self, name: str) -> Optional[Dict]:
-        """Get specific center by name"""
-        center = self.df[self.df['name'] == name]
-        if not center.empty:
-            return center.iloc[0].to_dict()
-        return None
 
     def _calculate_distance(self, 
                           lat1: float, 
@@ -145,61 +156,10 @@ class CoolingCenterData:
         """Calculate distance between two points in miles"""
         return geodesic((lat1, lng1), (lat2, lng2)).miles
 
-    def _is_center_open(self, hours: str) -> bool:
-        """
-        Check if a center is currently open based on hours string
-        Format expected: '9:00AM-9:00PM' or similar
-        """
-        try:
-            now = datetime.now()
-            open_time, close_time = hours.split('-')
-            
-            # Convert to 24-hour format
-            def convert_to_24hr(time_str):
-                time_str = time_str.strip()
-                time = datetime.strptime(time_str, '%I:%M%p')
-                return time.hour * 60 + time.minute
-            
-            open_minutes = convert_to_24hr(open_time)
-            close_minutes = convert_to_24hr(close_time)
-            current_minutes = now.hour * 60 + now.minute
-            
-            return open_minutes <= current_minutes <= close_minutes
-        except Exception as e:
-            print(f"Error checking hours {hours}: {e}")
-            return False
+    def get_centers_by_type(self, center_types: List[str]) -> pd.DataFrame:
+        """Get centers of specific types"""
+        return self.df[self.df['type'].isin(center_types)]
 
-    def get_centers_with_feature(self, feature: str) -> pd.DataFrame:
-        """Get centers that have a specific feature"""
-        return self.df[self.df['features'].apply(lambda x: feature in x)]
-
-    def to_dict(self) -> List[Dict]:
-        """Convert centers to list of dictionaries"""
-        return self.df.to_dict('records')
-
-    def to_geojson(self) -> Dict:
-        """Convert centers to GeoJSON format"""
-        features = []
-        for _, row in self.df.iterrows():
-            feature = {
-                'type': 'Feature',
-                'geometry': {
-                    'type': 'Point',
-                    'coordinates': [row['coordinates'][1], row['coordinates'][0]]
-                },
-                'properties': {
-                    'name': row['name'],
-                    'address': row['address'],
-                    'type': row['type'],
-                    'hours': row['hours'],
-                    'has_ac': row['has_ac'],
-                    'features': row['features'],
-                    'notes': row['notes']
-                }
-            }
-            features.append(feature)
-            
-        return {
-            'type': 'FeatureCollection',
-            'features': features
-        }
+    def get_open_centers(self) -> pd.DataFrame:
+        """Get only currently open centers"""
+        return self.df[self.df['hours'].apply(self._is_center_open)]
