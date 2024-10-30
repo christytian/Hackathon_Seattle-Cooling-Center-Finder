@@ -48,7 +48,7 @@ class CoolingCenterApp:
             # Type filter
             center_types = st.multiselect(
                 "Center Types",
-                ["Community Center", "Library", "Event Hall"],
+                ["Community Center", "Library", "Event Hall", "Senior Center"],
                 default=["Community Center", "Library", "Event Hall"]
             )
             
@@ -59,7 +59,9 @@ class CoolingCenterApp:
 
     def get_user_location(self):
         """Handle user location input"""
-        col1, col2 = st.columns([3, 1])
+        vertical_alignment = st.selectbox( "Vertical alignment", ["top", "center", "bottom"], index=2)
+        col1, col2, col3 = st.columns([3, 1, 1], vertical_alignment=vertical_alignment)
+        
         
         with col1:
             address = st.text_input(
@@ -69,8 +71,13 @@ class CoolingCenterApp:
         
         with col2:
             use_current = st.button("📍 Use My Location")
+            
+       
+        with col3:
+            search_button = st.button("🔍 Search")
+            
         
-        if address:
+        if search_button:
             location = self.map_service.geocode_address(address)
             if location:
                 st.session_state.user_location = location
