@@ -103,7 +103,7 @@ class CoolingCenterApp:
         # Add user location if available
         if st.session_state.user_location:
             m = self.map_service.add_user_marker(
-                m, 
+                m,
                 st.session_state.user_location
             )
         
@@ -146,76 +146,6 @@ class CoolingCenterApp:
         
         # Add route if center is selected
         if st.session_state.user_location and st.session_state.selected_center:
-            center = centers_df[
-                centers_df['name'] == st.session_state.selected_center
-            ].iloc[0]
-            destination = (center['lat'], center['lng'])
-            m = self.map_service.add_route_to_map(
-                m,
-                st.session_state.user_location,
-                destination
-            )
-        
-        # Display map
-        st_folium(m, width=800, height=500)
-
-    def display_map(self, centers_df):
-        """Display map with cooling centers"""
-        # Create base map
-        m = self.map_service.create_base_map()
-        
-        # Add user location if available
-        if st.session_state.user_location:
-            m = self.map_service.add_user_marker(
-                m,
-                st.session_state.user_location
-            )
-        
-        # Process centers data
-        centers = centers_df.copy()
-        centers['is_open'] = centers['hours'].apply(self.data_service._is_center_open)
-        
-        # Add cooling center markers with proper HTML popups
-        for _, center in centers.iterrows():
-            # Format hours by replacing semicolons with line breaks
-            hours_text = center['hours'].replace(';', '<br>')
-            
-            # Format features list
-            features = center['features']
-            if isinstance(features, str):
-                # Clean up the features string and split
-                features = features.replace('[', '').replace(']', '').replace("'", "").split(',')
-            
-            # Create bullet points for features
-            features_html = '<br>'.join([f"• {feature.strip()}" for feature in features])
-            
-            # Create popup content
-            popup_content = f"""
-                <div style='min-width: 200px; padding: 10px;'>
-                    <h4 style='margin-bottom: 10px;'>{center['name']}</h4>
-                    <p><b>Status:</b> {'🟢 Open' if center['is_open'] else '🔴 Closed'}</p>
-                    <p><b>Address:</b><br>{center['address']}</p>
-                    <p><b>Type:</b> {center['type']}</p>
-                    <p><b>Hours:</b><br>{hours_text}</p>
-                    <p><b>Features:</b><br>{features_html}</p>
-                    {f"<p><b>Distance:</b> {center['distance']:.1f} miles</p>" if 'distance' in center else ""}
-                    {f"<p><b>Notes:</b><br>{center['notes']}</p>" if pd.notna(center.get('notes')) else ''}
-                </div>
-            """
-            
-            # Add marker with popup
-            folium.Marker(
-                location=[float(center['lat']), float(center['lng'])],
-                popup=folium.Popup(popup_content, max_width=300),
-                icon=folium.Icon(
-                    color='green' if center['is_open'] else 'red',
-                    icon='info-sign'
-                ),
-                tooltip=f"{center['name']} ({'Open' if center['is_open'] else 'Closed'})"
-            ).add_to(m)
-        
-        # Add route if center is selected
-        if st.session_state.user_location and st.session_state.selected_center:
             center = centers[
                 centers['name'] == st.session_state.selected_center
             ].iloc[0]
@@ -228,6 +158,42 @@ class CoolingCenterApp:
         
         # Display map
         st_folium(m, width=800, height=500)
+
+
+    def display_center_list(self, centers_df):
+        """Display list of cooling centers"""
+        st.subheader("Nearby Cooling Centers")
+        
+        if centers_df.empty:
+            st.warning("No cooling centers found within the selected criteria.")
+            return
+        
+        for _, center in centers_df.iterrows():
+            # Determine if center is open
+            is_open = self.data_service._is_center_open(center['hours'])
+            status = "🟢 Open" if is_open else "🔴 Closed"
+            
+            with st.expander(
+                f"🏢 {center['name']} ({center['distance']:.1f} mi) - {status}"
+            ):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.write(f"📍 **Address:** {center['address']}")
+                    st.write(f"⏰ **Hours:** {center['hours']}")
+                    st.write(f"🏷️ **Type:** {center['type']}")
+                    st.write("✨ **Features:**")
+                    features = center['features']
+                    if isinstance(features, str):
+                        features = eval(features)
+                    for feature in features:
+                        st.write(f"  • {feature}")
+                    if pd.notna(center.get('notes')):
+                        st.write(f"📝 **Notes:** {center['notes']}")
+                
+                with col2:
+                    if st.button("Get Directions", key=center['name']):
+                        st.session_state.selected_center = center['name']
 
     def run(self):
         """Main app execution"""
@@ -244,16 +210,14 @@ class CoolingCenterApp:
             centers = self.data_service.get_nearest_centers(
                 st.session_state.user_location[0],
                 st.session_state.user_location[1],
-                max_distance=max_distance
+                max_distance=max_distance,
+                show_only_open=show_only_open
             )
             
-            # Apply type filter if types are selected
+            # Apply filters
             if center_types:
                 centers = centers[centers['type'].isin(center_types)]
-            
-            # Apply open/closed filter only if checkbox is checked
-            if show_only_open:
-                centers = centers[centers['is_open']]
+                
             
             # Display results
             if not centers.empty:
@@ -272,18 +236,19 @@ class CoolingCenterApp:
         else:
             st.info("👆 Enter your address to find nearby cooling centers.")
             
-            # Show all centers with filters
-            centers = self.data_service.get_all_centers()
+            # Show all centers with filters applied
+            all_centers = self.data_service.get_all_centers()
             
-            # Apply type filter if types are selected
-            if center_types:
-                centers = centers[centers['type'].isin(center_types)]
-            
-            # Apply open/closed filter only if checkbox is checked
+    
+            # Apply filters to initial view
             if show_only_open:
-                centers = centers[centers['is_open']]
-                
-            self.display_map(centers)
+                all_centers = all_centers[
+                    all_centers['hours'].apply(self.data_service._is_center_open)
+                ]
+            if center_types:
+                all_centers = all_centers[all_centers['type'].isin(center_types)]
+            
+            self.display_map(all_centers)
 
 def main():
     try:
