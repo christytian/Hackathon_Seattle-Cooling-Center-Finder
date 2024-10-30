@@ -67,7 +67,6 @@ class CoolingCenterApp:
         """Handle user location input"""
         col1, col2, col3 = st.columns([3, 1, 1])
         
-        
         with col1:
             address = st.text_input(
                 "Enter your address in Seattle:",
@@ -77,10 +76,8 @@ class CoolingCenterApp:
         with col2:
             use_current = st.button("📍 Use My Location")
             
-       
         with col3:
             search_button = st.button("🔍 Search")
-            
         
         if search_button:
             location = self.map_service.geocode_address(address)
@@ -102,10 +99,11 @@ class CoolingCenterApp:
         
         # Add user location if available
         if st.session_state.user_location:
-            m = self.map_service.add_user_marker(
-                m,
-                st.session_state.user_location
-            )
+            folium.Marker(
+                location=st.session_state.user_location,
+                popup="Your Location",
+                icon=folium.Icon(color='blue', icon='user')
+            ).add_to(m)
         
         # Process centers data
         centers = centers_df.copy()
@@ -150,11 +148,12 @@ class CoolingCenterApp:
                 centers['name'] == st.session_state.selected_center
             ].iloc[0]
             destination = (center['lat'], center['lng'])
-            m = self.map_service.add_route_to_map(
-                m,
-                st.session_state.user_location,
-                destination
+            route, distance, duration = self.map_service.get_route(
+                st.session_state.user_location, destination
             )
+            folium.PolyLine(route, color="blue", weight=5).add_to(m)
+            st.write(f"Estimated Distance: {distance}")
+            st.write(f"Estimated Travel Time: {duration}")
         
         # Display map
         st_folium(m, width=800, height=500)
@@ -239,7 +238,6 @@ class CoolingCenterApp:
             # Show all centers with filters applied
             all_centers = self.data_service.get_all_centers()
             
-    
             # Apply filters to initial view
             if show_only_open:
                 all_centers = all_centers[
@@ -249,6 +247,8 @@ class CoolingCenterApp:
                 all_centers = all_centers[all_centers['type'].isin(center_types)]
             
             self.display_map(all_centers)
+
+       
 
 def main():
     try:
